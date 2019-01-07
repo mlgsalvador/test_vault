@@ -1,44 +1,19 @@
-peline {
-    agent { label 'ldap'}
-	
-	stages {
-		stage('Permission') {
-			steps {
-				echo '\'path "auth/approle/role/java-example/secret-id" {   capabilities = ["read","create","update"] }\' > ./config/vault/policies/jenkins_policy.hcl'
-				sh 'vault policy-write jenkins ./config/vault/policies/jenkins_policy.hcl'
-			}
-		}
-		
-		stage('Create a Role') {
-			steps {
-				echo 'echo \'path "secret/hello" {   capabilities = ["read", "list"] }\' > ./config/vault/policies/java-example_policy.hcl'
-				sh 'vault policy-write java-example ./config/vault/policies/java-example_policy.hcl'
-				sh 'vault auth-enable approle'
-				sh '''vault write auth/approle/role/java-example \\
-					> secret_id_ttl=60m \\
-					> token_ttl=60m \\
-					> token_max_tll=120m \\
-					> policies="java-example"'''
-				sh 'vault read auth/approle/role/java-example'
-			}
-		}
-		
-		stage('Generate Role ID') {
-			steps {
-				sh 'vault read auth/approle/role/java-example/role-id'
-			}
-		}
-		
-		stage('Generate Jenkins Token ID') {
-			steps {
-				sh 'vault token-create -policy=jenkins'
-			}
-		}
-		
-		stage('Write a Secret') {
-			steps {
-				sh 'vault write secret/hello value="You\'ve Successfully retrieved a secret from Hashicorp Vault"'
-			}
-		}
-	}
+pipeline {
+  agent { label 'ldap'}
+stages {  
+  stage('Integration Tests') {
+      steps {
+        withCredentials([string(credentialsId: 'VAULT_ROLE_ID', variable: 'ROLE_ID'),string(credentialsId: 'JENKINS_VAULT_TOKEN', variable: 'VAULT_TOKEN')]) {
+        sh '''
+  set +x
+  export VAULT_ADDR=http://100.26.111.13:8200
+  export VAULT_SKIP_VERIFY=true
+  export SECRET_ID=$(./vault write -field=secret_id -f auth/approle/role/role-example/secret-id)
+  export JOB_VAULT_TOKEN=$(./vault write -field=token auth/approle/login role_id=${ROLE_ID}   secret_id=${SECRET_ID})
+./vault read -address=http://100.26.111.13:8200 secret/hello 
+        '''
+    }
+   }
+  }
+ }
 }
